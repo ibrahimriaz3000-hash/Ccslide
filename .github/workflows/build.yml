@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Zip kholo
+        run: unzip -o CCSliders.zip
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -21,9 +24,10 @@ jobs:
           gradle-version: 8.4
 
       - name: Build debug APK
+        working-directory: CCSliders
         run: gradle assembleDebug --stacktrace
 
       - uses: actions/upload-artifact@v4
         with:
           name: CCSliders-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: CCSliders/app/build/outputs/apk/debug/*.apk

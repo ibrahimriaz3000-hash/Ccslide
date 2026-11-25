@@ -8,26 +8,66 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-
-      - name: Zip kholo
-        run: unzip -o CCSliders.zip
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v3
-        with:
-          gradle-version: 8.4
+      - name: Project dhoondo (zip ho to kholo)
+        run: |
+          if ls *.zip >/dev/null 2>&1; then
+            for z in *.zip; do unzip -o "$z" -d extracted; done
+          fi
+          SETTINGS=$(find . -name settings.gradle -not -path "*/node_modules/*" | head -n 1)
+          if [ -z "$SETTINGS" ]; then
+            echo "settings.gradle nahi mili. Repo ki files ye hain:"
+            find . -maxdepth 3 -not -path "./.git/*" | sort
+            exit 1
+          fi
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          echo "Project mila: $PROJECT_DIR"
+
+      - name: Gradle 8.4 install
+        run: |
+          for i in 1 2 3; do
+            curl -fsSL -o gradle.zip https://services.gradle.org/distributions/gradle-8.4-bin.zip && break
+            echo "download fail, dobara try ($i)"; sleep 10
+          done
+          unzip -q gradle.zip -d "$HOME"
+          echo "$HOME/gradle-8.4/bin" >> $GITHUB_PATH
+
+      - name: Android licenses accept
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
       - name: Build debug APK
-        working-directory: CCSliders
-        run: gradle assembleDebug --stacktrace
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          set -o pipefail
+          gradle assembleDebug --no-daemon --stacktrace 2>&1 | tee "$GITHUB_WORKSPACE/build.log"
 
-      - uses: actions/upload-artifact@v4
+      - name: Error ka khulasa
+        if: failure()
+        run: |
+          echo "=== What went wrong ==="
+          grep -A 12 "What went wrong" build.log | head -n 40 || true
+          grep -n "error:" build.log | head -n 20 || true
+
+      - name: APK upload
+        if: success()
+        uses: actions/upload-artifact@v4
         with:
           name: CCSliders-debug-apk
-          path: CCSliders/app/build/outputs/apk/debug/*.apk
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+
+      - name: Log upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+          if-no-files-found: ignore
